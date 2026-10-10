@@ -102,17 +102,87 @@ def test_split_is_chronological_and_disjoint():
 
 
 @pytest.mark.parametrize(
-    "ci, holdout_slope, expected",
+    "ci, decision",
+    [([0.1, 0.3], "supported"), ([-0.3, -0.1], "unsupported"), ([-0.1, 0.2], "inconclusive")],
+)
+def test_development_decision(ci, decision):
+    assert study.development_decision({"slope_ci": ci}) == decision
+    assert study.development_decision({"n": 5}) == "inconclusive"
+
+
+@pytest.mark.parametrize(
+    "decision, holdout_slope, expected",
     [
-        ([0.1, 0.3], 0.2, "supported"),
-        ([0.1, 0.3], -0.1, "inconclusive"),
-        ([-0.3, -0.1], 0.1, "unsupported"),
-        ([-0.1, 0.2], -0.05, "unsupported"),
-        ([-0.1, 0.2], 0.05, "inconclusive"),
+        ("supported", 0.2, "supported"),
+        ("supported", -0.1, "not confirmed in holdout"),
+        ("inconclusive", 5.0, "inconclusive"),  # a strong holdout cannot rescue it
+        ("unsupported", 5.0, "unsupported"),
     ],
 )
-def test_verdict_rule(ci, holdout_slope, expected):
-    assert study.verdict({"slope_ci": ci}, {"slope": holdout_slope}) == expected
+def test_holdout_only_confirms_a_supported_decision(decision, holdout_slope, expected):
+    assert study.verdict(decision, {"slope": holdout_slope}) == expected
+
+
+def test_holdout_days_do_not_affect_the_decision():
+    """Regression (PR #3 review 1): the decision must not see holdout data."""
+    rng = np.random.default_rng(3)
+    days = list(sessions.schedule(date(2025, 1, 2), date(2025, 6, 30)).index.astype(str))
+    r_open = rng.uniform(-0.01, 0.01, len(days))
+    noise = rng.uniform(-0.01, 0.01, len(days))
+
+    holdout = (study.split_labels(pd.to_datetime(pd.Index(days))) == "holdout").to_numpy()
+
+    def summary_for(holdout_slope):
+        r_close = np.where(holdout, holdout_slope * r_open, noise)
+        rows = zip(days, r_open, r_close, strict=True)
+        bars = pd.concat(make_day(d, ro, rc) for d, ro, rc in rows)
+        return study.run({"QQQ": bars}, study.Settings(symbols=("QQQ",), n_boot=50))[0]
+
+    a, b = summary_for(1.0), summary_for(-1.0)
+    qa, qb = a["symbols"]["QQQ"], b["symbols"]["QQQ"]
+    assert qa["descriptive"]["development"] == qb["descriptive"]["development"]
+    assert qa["development_decision"] == qb["development_decision"]
+    assert qa["descriptive"]["by_split"]["holdout"] != qb["descriptive"]["by_split"]["holdout"]
+
+
+def test_delayed_entry_uses_the_1001_open_and_needs_that_bar():
+    """Regression (PR #3 review 2): a one-minute-latency variant is reported."""
+    df = make_day("2025-01-06", 0.01, 0.0)
+    df.loc[at("2025-01-06", 31), ["Open", "High"]] = [100.5, 100.5]
+    days = study.daily_windows(df)
+    assert study.trades(days, "from_1001", 0.0).entry.iloc[0] == 100.5
+    assert study.trades(days, "from_1000", 0.0).entry.iloc[0] == 100
+    gap = study.daily_windows(make_day("2025-01-06", 0.01, 0.0, skip={31}))
+    assert study.trades(gap, "from_1001", 0.0).empty
+    assert len(study.trades(gap, "from_1000", 0.0)) == 1
+
+
+def test_trade_sums_are_fixed_notional_not_compounded():
+    """Regression (PR #3 review 3): metric names say what is computed."""
+    m = study.trade_metrics(pd.Series([0.10, -0.10, 0.05]), n_boot=20)
+    assert m["sum_of_trade_returns_pct"] == pytest.approx(5.0)  # compounded would be 3.95
+    assert m["fixed_notional_drawdown_pct"] == pytest.approx(-10.0)
+    assert "total_return_pct" not in m and "max_drawdown_pct" not in m
+
+
+def test_block_bootstrap_keeps_consecutive_days_together():
+    """Regression (PR #3 review 4): CIs resample blocks of days, not single days."""
+    rng = np.random.default_rng(0)
+    idx = study.block_indices(103, 5, rng)
+    assert len(idx) == 103
+    steps = np.diff(idx).reshape(-1)[: 5 * (103 // 5)].reshape(-1, 5)[:, :4]
+    assert np.isin(steps, [1, -102]).all()  # within a block: next day (wrapping around)
+    a = study._boot_ci(np.arange(50.0), np.random.default_rng(1), 200, np.mean, 5)
+    b = study._boot_ci(np.arange(50.0), np.random.default_rng(1), 200, np.mean, 5)
+    assert a == b
+
+
+def test_constant_inputs_do_not_crash():
+    """Regression (PR #3 review 4): zero variance returns a flag, not NaN or an error."""
+    days = study.daily_windows(pd.concat(make_day(d, 0.01, 0.002) for d in DAYS))
+    with np.errstate(all="raise"):
+        assert study.describe(days, n_boot=20) == {"n": len(DAYS), "degenerate": "zero variance"}
+    assert study.trade_metrics(pd.Series([0.001] * 5), n_boot=20)["t_stat"] is None
 
 
 def test_cli_writes_reproducible_outputs(tmp_path, monkeypatch):
@@ -132,4 +202,6 @@ def test_cli_writes_reproducible_outputs(tmp_path, monkeypatch):
     assert "verdict" in (tmp_path / "out" / "report.md").read_text()
     daily = pd.read_csv(tmp_path / "out" / "daily.csv")
     assert set(daily.split) == {"exploration", "validation", "holdout"}
-    assert summary["symbols"]["QQQ"]["verdict"] == "inconclusive"  # 7-day holdout < 10 days
+    qqq = summary["symbols"]["QQQ"]
+    assert qqq["development_decision"] == "supported"
+    assert qqq["verdict"] == "not confirmed in holdout"  # 7-day holdout < 10-day minimum
