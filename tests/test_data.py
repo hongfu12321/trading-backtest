@@ -114,6 +114,21 @@ def test_api_key_is_sent_as_header_not_in_url():
     assert "secret-key" not in repr((c.session.urls, c.session.params))
 
 
+@pytest.mark.parametrize(
+    "next_url",
+    [
+        "https://evil.example.com/v2/aggs?cursor=1",
+        "http://api.massive.com/v2/aggs?cursor=1",  # downgrade to plain HTTP
+        "https://api.massive.com.evil.example/v2/aggs",  # look-alike host
+    ],
+)
+def test_next_url_outside_api_host_is_refused(client, next_url):
+    client.session.script = [FakeResponse({"results": [], "next_url": next_url})]
+    with pytest.raises(RuntimeError, match="Refusing next_url"):
+        list(client.iter_chunks("QQQ", JAN1, date(2025, 1, 5)))
+    assert client.session.urls == [client.session.urls[0]]  # never requested
+
+
 def test_rate_limit_and_network_errors_are_retried(client):
     client.session.script = [
         FakeResponse(status=429, headers={"Retry-After": "7"}),

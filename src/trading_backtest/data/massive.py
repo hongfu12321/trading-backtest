@@ -13,7 +13,8 @@ from trading_backtest.data.store import COLUMNS, TZ, mark_completed, missing_ran
 
 log = logging.getLogger(__name__)
 
-BASE_URL = "https://api.massive.com/v2/aggs/ticker"
+API_ORIGIN = "https://api.massive.com"
+BASE_URL = f"{API_ORIGIN}/v2/aggs/ticker"
 CHUNK_DAYS = 30  # keeps each request under the 50k-bar limit for minute data
 RATE_LIMIT_WAIT = 65
 MAX_RETRIES = 5
@@ -48,6 +49,9 @@ class MassiveClient:
             payload = self._get(url, params)
             rows.extend(payload.get("results") or [])
             url = payload.get("next_url")
+            if url and not url.startswith(API_ORIGIN + "/"):
+                # The bearer key goes with every request; never send it to another host.
+                raise RuntimeError(f"Refusing next_url outside {API_ORIGIN}: {url}")
             params = None
             time.sleep(self.request_interval)
         return rows
