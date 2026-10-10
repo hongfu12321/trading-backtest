@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from trading_backtest import engine
+from trading_backtest.analytics import metrics
 from trading_backtest.config import load_settings
 from trading_backtest.data import bar_path, load_bars
 from trading_backtest.data.massive import MassiveClient, download
@@ -51,20 +52,46 @@ def cmd_backtest(args, settings):
     data = load_bars(bar_path(settings.raw_dir, args.symbol), args.start, args.end)
     strategy = get_strategy(args.strategy)
     costs = engine.CostModel(commission=args.commission, spread=args.spread)
+    out = Path("reports") / f"{args.strategy}_{args.symbol}"
 
+    # Parameters are chosen on the training segment only; the test segment is untouched.
+    segments = {"all": data}
+    if args.split:
+        cut = pd.Timestamp(args.split, tz=data.index.tz)
+        segments = {"in_sample": data[data.index < cut], "out_of_sample": data[data.index >= cut]}
+    fit_data = next(iter(segments.values()))
+
+    params = parse_params(args.param)
     if args.optimize:
-        stats = engine.optimize(
-            data, strategy, parse_params(args.optimize, multi=True), costs=costs
+        best = engine.optimize(
+            fit_data, strategy, parse_params(args.optimize, multi=True), costs=costs
         )
-        print(stats)
-        print("\nBest params:", stats._strategy)
-        return
+        params = {
+            k: v.item() if hasattr(v, "item") else v for k, v in best._strategy._params.items()
+        }
+        print("Best params on", next(iter(segments)), "data:", params)
+        if not args.split:
+            print("Warning: optimized and evaluated on the same data; use --split for a fair test.")
 
-    plot = Path("reports") / f"{args.strategy}_{args.symbol}.html" if args.plot else None
-    stats = engine.run(data, strategy, parse_params(args.param), plot_path=plot, costs=costs)
-    print(stats)
-    if plot:
-        print(f"\nPlot: {plot}")
+    for name, segment in segments.items():
+        seg_out = out / name if args.split else out
+        plot = seg_out / "chart.html" if args.plot else None
+        stats = engine.run(segment, strategy, params, plot_path=plot, costs=costs)
+        meta = {
+            "strategy": args.strategy,
+            "symbol": args.symbol,
+            "segment": name,
+            "data_start": str(segment.index[0]),
+            "data_end": str(segment.index[-1]),
+            "params": params,
+            "costs": vars(costs),
+            "cash": 100_000,
+        }
+        summary = metrics.write_report(stats, seg_out, meta)
+        print(f"\n=== {name} ===\n{stats}\n\nReport: {seg_out}")
+        print(
+            {k: round(v, 4) if isinstance(v, float) else v for k, v in summary["metrics"].items()}
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -88,6 +115,9 @@ def main(argv: list[str] | None = None) -> None:
     bt.add_argument("--commission", type=float, default=0.0)
     bt.add_argument("--spread", type=float, default=0.0001)
     bt.add_argument("--plot", action="store_true", help="write an HTML chart to reports/")
+    bt.add_argument(
+        "--split", metavar="YYYY-MM-DD", help="optimize before this date, evaluate from it on"
+    )
     bt.set_defaults(func=cmd_backtest)
 
     args = parser.parse_args(argv)
