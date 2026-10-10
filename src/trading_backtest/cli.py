@@ -94,6 +94,22 @@ def cmd_backtest(args, settings):
         )
 
 
+def cmd_research(args, settings):
+    from trading_backtest.research import intraday_momentum as study
+
+    symbols = tuple(s.upper() for s in args.symbols)
+    bars = {s: load_bars(bar_path(settings.raw_dir, s), args.start, args.end) for s in symbols}
+    run_settings = study.Settings(symbols=symbols, seed=args.seed, n_boot=args.n_boot)
+    summary, daily = study.run(bars, run_settings)
+    study.write_outputs(summary, daily, args.out)
+    for symbol, s in summary["symbols"].items():
+        full = s["descriptive"]["full"]
+        print(
+            f"{symbol}: {s['verdict']} (n={full['n']}, slope={full.get('slope', float('nan')):.3f})"
+        )
+    print(f"Report: {args.out / 'report.md'}")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="trading-backtest")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -119,6 +135,16 @@ def main(argv: list[str] | None = None) -> None:
         "--split", metavar="YYYY-MM-DD", help="optimize before this date, evaluate from it on"
     )
     bt.set_defaults(func=cmd_backtest)
+
+    rs = sub.add_parser("research", help="run a research study (no trading)")
+    rs.add_argument("study", choices=["momentum"], help="momentum: Research 001")
+    rs.add_argument("--symbols", nargs="+", default=["QQQ", "SPY"])
+    rs.add_argument("--start", help="YYYY-MM-DD")
+    rs.add_argument("--end", help="YYYY-MM-DD")
+    rs.add_argument("--seed", type=int, default=0)
+    rs.add_argument("--n-boot", type=int, default=2000)
+    rs.add_argument("--out", type=Path, default=Path("reports/experiments/001-intraday-momentum"))
+    rs.set_defaults(func=cmd_research)
 
     args = parser.parse_args(argv)
     logging.basicConfig(

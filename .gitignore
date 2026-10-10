@@ -13,5 +13,9 @@ dist/
 
 # Generated data and reports (re-create with the CLI)
 /data/
-/reports/
+/reports/*
+# Small experiment manifests and summaries are tracked; bulky outputs are not.
+!/reports/experiments/
+/reports/experiments/**/*.html
+/reports/experiments/**/*.parquet
 .claude/settings.local.json
