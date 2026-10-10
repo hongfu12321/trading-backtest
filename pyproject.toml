@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "backtesting>=0.6.6",
+    "exchange-calendars>=4.13.2",
     "numpy>=2.5.3",
     "pandas>=3.0.6",
     "pyarrow>=26.0.0",

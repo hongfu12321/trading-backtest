@@ -135,7 +135,7 @@ def test_pending_entry_order_cancelled_before_next_session():
 
 
 def test_early_close_calendar():
-    early = ["2025-07-03", "2025-11-28", "2025-12-24", "2026-11-27", "2026-12-24", "2027-11-26"]
-    normal = ["2026-07-02", "2025-11-26", "2027-12-24", "2025-07-02"]  # 2027-12-24 is a Friday
+    early = ["2025-07-03", "2025-11-28", "2025-12-24", "2026-11-27", "2026-12-24", "2024-11-29"]
+    normal = ["2026-07-02", "2025-11-26", "2025-07-02", "2026-07-03"]  # 2026-07-03 is a holiday
     assert all(sessions.is_early_close(pd.Timestamp(d).date()) for d in early)
     assert not any(sessions.is_early_close(pd.Timestamp(d).date()) for d in normal)
