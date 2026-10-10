@@ -3,10 +3,13 @@ import logging
 from datetime import date, timedelta
 from pathlib import Path
 
+import pandas as pd
+
 from trading_backtest import engine
 from trading_backtest.config import load_settings
-from trading_backtest.data import bar_path, load_bars, save_bars
-from trading_backtest.data.massive import MassiveClient
+from trading_backtest.data import bar_path, load_bars
+from trading_backtest.data.massive import MassiveClient, download
+from trading_backtest.data.validation import write_report
 from trading_backtest.strategies import STRATEGIES, get_strategy
 
 
@@ -30,10 +33,18 @@ def cmd_download(args, settings):
     client = MassiveClient(settings.massive_api_key, settings.request_interval)
     end = args.end or date.today() - timedelta(days=1)
     start = args.start or end - timedelta(days=365)
-    df = client.get_bars(args.symbol.upper(), start, end)
-    path = bar_path(settings.raw_dir, args.symbol)
-    save_bars(df, path)
-    print(f"Saved {len(df):,} bars ({df.timestamp.min()} .. {df.timestamp.max()}) to {path}")
+    for symbol in (s.upper() for s in args.symbols):
+        path = bar_path(settings.raw_dir, symbol)
+        saved = download(client, symbol, start, end, path)
+        if not path.exists():
+            print(f"{symbol}: no bars returned for {start}..{end}")
+            continue
+        report_path = path.with_suffix(".validation.json")
+        report = write_report(pd.read_parquet(path), report_path, adjusted=True)
+        print(
+            f"{symbol}: saved {saved:,} new bars to {path} ({report['rows']:,} total, "
+            f"{len(report['incomplete_sessions'])} incomplete sessions; see {report_path})"
+        )
 
 
 def cmd_backtest(args, settings):
@@ -62,7 +73,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     dl = sub.add_parser("download", help="download minute bars from Massive")
-    dl.add_argument("symbol")
+    dl.add_argument("symbols", nargs="+", metavar="SYMBOL")
     dl.add_argument("--start", type=date.fromisoformat)
     dl.add_argument("--end", type=date.fromisoformat)
     dl.set_defaults(func=cmd_download)
