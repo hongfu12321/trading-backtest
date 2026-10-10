@@ -39,7 +39,7 @@ def make_backtest(
     cash: float = 100_000,
     costs: CostModel = DEFAULT_COSTS,
 ) -> Backtest:
-    data, dropped = sessions.drop_untradable(data)
+    data, dropped = sessions.tradable_bars(data)
     if dropped:
         log.warning("Skipping %d session(s) too incomplete to flatten: %s", len(dropped), dropped)
     return Backtest(

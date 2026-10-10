@@ -96,9 +96,12 @@ def test_missing_open_bar_skips_the_day():
     assert trades(breakout_day(D1, skip={0})).empty
 
 
-def test_early_close_session_flattens_at_1256():
-    t = trades(days(breakout_day(D1, minutes=210), session(D2)))
-    assert t.iloc[0].ExitTime == at(D1, 206)
+def test_early_close_session_flattens_at_1256_and_ignores_after_hours():
+    friday = "2025-11-28"  # day after Thanksgiving; vendor still sends bars after 13:00
+    df = days(breakout_day(friday), session("2025-12-01"))
+    set_bar(df, friday, 300, low=90, c=90)  # 14:30 after-hours crash must not hit the stop
+    t = trades(df)
+    assert len(t) == 1 and t.iloc[0].ExitTime == at(friday, 206)
 
 
 def test_session_missing_final_bars_is_dropped(caplog):
@@ -129,3 +132,10 @@ class StopEntry(IntradayStrategy):
 def test_pending_entry_order_cancelled_before_next_session():
     df = days(session(D1), session(D2, price=210))
     assert trades(df, StopEntry).empty
+
+
+def test_early_close_calendar():
+    early = ["2025-07-03", "2025-11-28", "2025-12-24", "2026-11-27", "2026-12-24", "2027-11-26"]
+    normal = ["2026-07-02", "2025-11-26", "2027-12-24", "2025-07-02"]  # 2027-12-24 is a Friday
+    assert all(sessions.is_early_close(pd.Timestamp(d).date()) for d in early)
+    assert not any(sessions.is_early_close(pd.Timestamp(d).date()) for d in normal)

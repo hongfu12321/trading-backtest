@@ -192,8 +192,9 @@ def test_validation_flags_bad_rows_and_short_sessions():
 
 
 def test_validation_handles_early_close_and_dst():
-    # 2025-11-28 is an early close; 2025-03-10 is the first session after DST starts.
-    df = pd.concat([bars_frame("2025-11-28", 210), bars_frame("2025-03-10", 390)])
+    # 2025-11-28 is an early close (after-hours bars to 16:00 included);
+    # 2025-03-10 is the first session after DST starts.
+    df = pd.concat([bars_frame("2025-11-28", 390), bars_frame("2025-03-10", 390)])
     df = df.sort_values("timestamp", ignore_index=True)
     report = validate(df)
     assert report["early_close_sessions"] == ["2025-11-28"]

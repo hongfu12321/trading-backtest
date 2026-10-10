@@ -39,7 +39,8 @@ with `in_sample/` and `out_of_sample/` subfolders when `--split` is used.
 - Regular hours only (9:30–16:00 ET). Signals use completed bars; market orders fill at the
   next bar's open.
 - Positions are flattened in the last 5 minutes of each session: 15:55 normally, 12:55 on
-  early-close days (a day whose bars end before 13:00). Pending entry orders are cancelled
+  NYSE early-close days (day after Thanksgiving; July 3 and Dec 24 when Mon–Thu), whose
+  after-hours bars are ignored. Pending entry orders are cancelled
   there, and no entry can fill inside that window, so nothing is held overnight.
 - Sessions with fewer than two bars in that window cannot be flattened without inventing a
   price, so they are skipped with a warning.

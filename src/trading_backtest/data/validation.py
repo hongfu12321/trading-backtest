@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from trading_backtest import sessions
-from trading_backtest.data.store import MARKET_CLOSE, MARKET_OPEN, TZ
+from trading_backtest.data.store import TZ
 
 
 def validate(df: pd.DataFrame) -> dict:
@@ -17,8 +17,8 @@ def validate(df: pd.DataFrame) -> dict:
         (df.high < prices.max(axis=1)) | (df.low > prices.min(axis=1)) | (df.high < df.low)
     )
 
-    t = ts.dt.time
-    regular = pd.DatetimeIndex(ts[(t >= MARKET_OPEN) & (t < MARKET_CLOSE)].drop_duplicates())
+    stamps = pd.DatetimeIndex(ts.drop_duplicates())
+    regular = stamps[sessions.in_session(stamps)]
     counts = pd.Series(1, index=regular).groupby(regular.date).sum()
     expected = (
         pd.Series(sessions.close_minute(regular), index=regular).groupby(regular.date).first()
