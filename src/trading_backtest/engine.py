@@ -1,10 +1,27 @@
-"""Run and optimize strategies with consistent cost assumptions."""
+"""Run and optimize strategies with consistent cost and execution assumptions.
 
+Execution model (backtesting.py 0.6, as configured here):
+
+- Market orders fill at the next bar's open. Signals see only completed bars.
+- Stop-loss orders fill at the stop price, or at the bar's open if the price gapped
+  through the stop (the worse price).
+- If a stop-loss and take-profit are both inside one bar, the stop-loss is assumed hit.
+- `spread` is charged once per trade, on entry; `commission` on entry and on exit.
+- Orders without a size use ~100% of equity with no margin, so buying power is never
+  exceeded. Sizes are whole shares.
+- A fixed spread understates costs on illiquid or volatile names; raise it for those.
+"""
+
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 from backtesting import Backtest, Strategy
+
+from trading_backtest import sessions
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -22,6 +39,9 @@ def make_backtest(
     cash: float = 100_000,
     costs: CostModel = DEFAULT_COSTS,
 ) -> Backtest:
+    data, dropped = sessions.drop_untradable(data)
+    if dropped:
+        log.warning("Skipping %d session(s) too incomplete to flatten: %s", len(dropped), dropped)
     return Backtest(
         data,
         strategy,

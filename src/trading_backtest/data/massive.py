@@ -66,7 +66,14 @@ class MassiveClient:
 def normalize(raw: pd.DataFrame) -> pd.DataFrame:
     """Convert API rows to the standard bar schema with New York timestamps."""
     df = raw.rename(
-        columns={"t": "timestamp", "o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"}
+        columns={
+            "t": "timestamp",
+            "o": "open",
+            "h": "high",
+            "l": "low",
+            "c": "close",
+            "v": "volume",
+        }
     )
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert(TZ)
     return (
