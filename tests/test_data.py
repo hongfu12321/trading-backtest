@@ -68,10 +68,11 @@ class FakeSession:
     """Serves one bar at 10:00 on each chunk's first day; `script` overrides by call."""
 
     def __init__(self, script=None):
-        self.urls, self.script = [], list(script or [])
+        self.urls, self.params, self.script = [], [], list(script or [])
 
     def get(self, url, params=None, timeout=None):
         self.urls.append(url)
+        self.params.append(params)
         if self.script:
             step = self.script.pop(0)
             if isinstance(step, BaseException):
@@ -103,6 +104,29 @@ def test_pagination_follows_next_url(client):
     chunks = list(client.iter_chunks("QQQ", JAN1, date(2025, 1, 5)))
     assert client.session.urls[1] == page2
     assert len(chunks) == 1
+
+
+def test_api_key_is_sent_as_header_not_in_url():
+    c = massive.MassiveClient("secret-key", request_interval=0)
+    assert c.session.headers["Authorization"] == "Bearer secret-key"
+    c.session = FakeSession()
+    list(c.iter_chunks("QQQ", JAN1, date(2025, 1, 5)))
+    assert "secret-key" not in repr((c.session.urls, c.session.params))
+
+
+@pytest.mark.parametrize(
+    "next_url",
+    [
+        "https://evil.example.com/v2/aggs?cursor=1",
+        "http://api.massive.com/v2/aggs?cursor=1",  # downgrade to plain HTTP
+        "https://api.massive.com.evil.example/v2/aggs",  # look-alike host
+    ],
+)
+def test_next_url_outside_api_host_is_refused(client, next_url):
+    client.session.script = [FakeResponse({"results": [], "next_url": next_url})]
+    with pytest.raises(RuntimeError, match="Refusing next_url"):
+        list(client.iter_chunks("QQQ", JAN1, date(2025, 1, 5)))
+    assert client.session.urls == [client.session.urls[0]]  # never requested
 
 
 def test_rate_limit_and_network_errors_are_retried(client):

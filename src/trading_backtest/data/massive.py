@@ -13,7 +13,8 @@ from trading_backtest.data.store import COLUMNS, TZ, mark_completed, missing_ran
 
 log = logging.getLogger(__name__)
 
-BASE_URL = "https://api.massive.com/v2/aggs/ticker"
+API_ORIGIN = "https://api.massive.com"
+BASE_URL = f"{API_ORIGIN}/v2/aggs/ticker"
 CHUNK_DAYS = 30  # keeps each request under the 50k-bar limit for minute data
 RATE_LIMIT_WAIT = 65
 MAX_RETRIES = 5
@@ -23,9 +24,10 @@ class MassiveClient:
     def __init__(self, api_key: str, request_interval: float = 13.0):
         if not api_key:
             raise ValueError("MASSIVE_API_KEY is missing; set it in .env")
-        self.api_key = api_key
         self.request_interval = request_interval
         self.session = requests.Session()
+        # Sent as a header, not a query parameter, so it never appears in URLs or errors.
+        self.session.headers["Authorization"] = f"Bearer {api_key}"
 
     def iter_chunks(
         self, symbol: str, start: date, end: date, multiplier: int = 1, timespan: str = "minute"
@@ -41,13 +43,16 @@ class MassiveClient:
 
     def _fetch_rows(self, url: str) -> list[dict]:
         rows = []
-        # next_url already carries the query except the API key.
-        params = {"apiKey": self.api_key, "adjusted": "true", "sort": "asc", "limit": 50000}
+        # next_url already carries the full query.
+        params = {"adjusted": "true", "sort": "asc", "limit": 50000}
         while url:
             payload = self._get(url, params)
             rows.extend(payload.get("results") or [])
             url = payload.get("next_url")
-            params = {"apiKey": self.api_key}
+            if url and not url.startswith(API_ORIGIN + "/"):
+                # The bearer key goes with every request; never send it to another host.
+                raise RuntimeError(f"Refusing next_url outside {API_ORIGIN}: {url}")
+            params = None
             time.sleep(self.request_interval)
         return rows
 
