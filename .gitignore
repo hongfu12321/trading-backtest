@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+*.egg-info
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets
+.env
+
+# Generated data and reports (re-create with the CLI)
+/data/
+/reports/
+.claude/settings.local.json
