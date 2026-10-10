@@ -1,6 +1,6 @@
 # Research 001 — Intraday Momentum in QQQ and SPY
 
-**Status:** Proposed; no results yet.  
+**Status:** First run complete (Issue #1). Verdict: **inconclusive** for QQQ and SPY; no tradeable edge found.  
 **Scope:** Research first, trading strategy later.  
 **Primary reference:** Gao, Han, Li, and Zhou (2018), *Market Intraday Momentum*, Journal of Financial Economics. Verify the original paper's exact definitions and samples before claiming replication.
 
@@ -53,3 +53,21 @@ This is a research hypothesis, **not** an established profitable trading rule fo
 
 ## Reference
 - Gao et al., *Market Intraday Momentum* (2018). Source: https://www.sciencedirect.com/science/article/pii/S0304405X18301351
+
+## Results (first run, Issue #1)
+
+Full figures: [`reports/experiments/001-intraday-momentum/report.md`](../../reports/experiments/001-intraday-momentum/report.md); per-day data and run settings (seed 0, 2000 bootstrap draws, git SHA) in `daily.csv` and `summary.json` next to it. Reproduce with `uv run trading-backtest research momentum`.
+
+**Coverage.** 2024-10-09 to 2026-10-08 only (501 sessions per symbol; 496 used, 5 early closes excluded; no missing minutes). The current Massive plan returns 403 for older minute data, so 2022–2024 is **not** covered; extending it needs a paid upgrade, which was not requested.
+
+**Definitions as run.** Timestamps are bar starts (ET). r_open = 09:59 close / 09:30 open − 1; r_close = 15:59 close / 15:29 close − 1. The previous-close variant (closer to Gao et al.; not verified against the paper) is reported alongside. Splits fixed before running: exploration 2024-10-09–2025-10-08, validation 2025-10-09–2026-04-10, holdout 2026-04-13–2026-10-08.
+
+**Findings.**
+- No reliable relationship: full-sample correlation 0.04 (QQQ) and 0.05 (SPY), slope CIs span zero, Spearman ≈ 0, sign agreement below 50%. The previous-close definition is also ≈ 0.
+- Unstable: slope positive in the exploration period, negative in validation, ≈ 0 in the holdout; positive in 2025, negative in 2026.
+- `last_half_hour` trade (enter 15:30, exit at close, side = sign of r_open): negative in every split for both symbols, already slightly negative before costs (−0.4 / −0.3 bps mean).
+- `from_1000` trade (enter 10:00, exit at close): positive only in the exploration period (+7 bps at 2 bps cost), negative in validation and holdout. Not evidence of an edge.
+
+**Verdict:** inconclusive under the pre-registered rule (full-sample slope CI spans zero; holdout slope slightly positive). In practice the data shows no usable intraday momentum in QQQ/SPY over this period.
+
+**Limitations.** Two years only, one regime; no 2022 bear market. Minute-bar Close of 15:59 stands in for the closing auction, and the 09:30 bar's Open for the opening auction. Adjusted prices from a single vendor. Costs are a flat round-trip bps charge with no market-impact model. Bootstrap resamples independent days (no block structure); Newey-West uses 5 lags. Quintile bins are computed ex post on the full sample and are descriptive only.
