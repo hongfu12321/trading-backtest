@@ -39,8 +39,8 @@ with `in_sample/` and `out_of_sample/` subfolders when `--split` is used.
 - Regular hours only (9:30–16:00 ET). Signals use completed bars; market orders fill at the
   next bar's open.
 - Positions are flattened in the last 5 minutes of each session: 15:55 normally, 12:55 on
-  NYSE early-close days (day after Thanksgiving; July 3 and Dec 24 when Mon–Thu), whose
-  after-hours bars are ignored. Pending entry orders are cancelled
+  NYSE early-close days (from the `exchange_calendars` XNYS calendar), whose after-hours
+  bars are ignored. Pending entry orders are cancelled
   there, and no entry can fill inside that window, so nothing is held overnight.
 - Sessions with fewer than two bars in that window cannot be flattened without inventing a
   price, so they are skipped with a warning.
@@ -53,6 +53,61 @@ with `in_sample/` and `out_of_sample/` subfolders when `--split` is used.
   A close beyond it signals; days missing the 9:30 bar are not traded. On the first day of
   a dataset, backtesting.py skips bars until the indicator has a value, so the first bar
   after the range cannot signal on that day only.
+
+## Indicators and features
+
+Causal building blocks for strategies: pandas in, pandas out, same index as the input. A
+value at bar t uses only bars up to and including t (a timestamp is the bar's *start*, so
+act on it after t closes). Sessions, holidays, early closes and DST come from the NYSE
+calendar (`exchange_calendars`). Bad input (naive or unsorted index, duplicates, NaN,
+inconsistent OHLC) raises `ValueError`.
+
+| Function | Output | Notes |
+|---|---|---|
+| `features.session_info(df)` | session date, minute of session, open/close, regular flag | off-session bars marked, not assigned |
+| `features.opening_range(df, minutes)` | `OR_High/Low/Mid/Complete` | final on the completing bar; never if a range bar is missing |
+| `features.previous_day_levels(df)` | `PDH/PDL/Prev_Close` | previous exchange session; NaN if it is incomplete |
+| `features.intraday_levels(df)` | `HOD/LOD`, `*_Previous_Bar` | reset each session |
+| `features.complete_sessions(df)` | bool per session | retrospective data quality, not a live signal |
+| `indicators.session_vwap(df)` | `VWAP` | bar-based (hlc3) approximation, resets 9:30 |
+| `indicators.ema(close, period)` | `EMA{period}` | `adjust=False`, NaN for first period-1 bars, no daily reset |
+| `indicators.atr(df, period)` | `ATR{period}` | Wilder; seed = mean of first `period` true ranges |
+| `indicators.cumulative_rvol(df, n)` | `RVOL` | vs. mean of last n full, complete sessions at the same minute |
+
+```python
+from pathlib import Path
+
+from trading_backtest.data import load_bars
+from trading_backtest.features import opening_range
+from trading_backtest.indicators import ema, session_vwap
+
+bars = load_bars(Path("data/raw/QQQ_minute.parquet"))
+vwap = session_vwap(bars)
+ema20 = ema(bars.Close, 20)
+orb = opening_range(bars, minutes=15)
+```
+
+In a backtesting.py strategy, compute once in `init()`:
+`self.vwap = self.I(lambda: session_vwap(self.data.df).to_numpy())`.
+
+## Layout
+
+```
+src/trading_backtest/
+  cli.py               command-line entry point
+  config.py            settings from environment / .env
+  engine.py            run/optimize backtests with a shared cost model
+  sessions.py          NYSE session schedule and flatten window
+  data/massive.py      Massive API client and resumable downloader
+  data/store.py        parquet storage, download manifest, loading
+  data/validation.py   data-quality report
+  analytics/metrics.py trade metrics and report files
+  indicators/          VWAP, EMA, ATR, cumulative RVOL
+  features/            session metadata, opening range, previous-day and intraday levels
+  strategies/base.py   IntradayStrategy: session-aware flattening
+  strategies/orb.py    opening range breakout
+tests/
+```
 
 ## Adding a strategy
 
