@@ -23,9 +23,10 @@ class MassiveClient:
     def __init__(self, api_key: str, request_interval: float = 13.0):
         if not api_key:
             raise ValueError("MASSIVE_API_KEY is missing; set it in .env")
-        self.api_key = api_key
         self.request_interval = request_interval
         self.session = requests.Session()
+        # Sent as a header, not a query parameter, so it never appears in URLs or errors.
+        self.session.headers["Authorization"] = f"Bearer {api_key}"
 
     def iter_chunks(
         self, symbol: str, start: date, end: date, multiplier: int = 1, timespan: str = "minute"
@@ -41,13 +42,13 @@ class MassiveClient:
 
     def _fetch_rows(self, url: str) -> list[dict]:
         rows = []
-        # next_url already carries the query except the API key.
-        params = {"apiKey": self.api_key, "adjusted": "true", "sort": "asc", "limit": 50000}
+        # next_url already carries the full query.
+        params = {"adjusted": "true", "sort": "asc", "limit": 50000}
         while url:
             payload = self._get(url, params)
             rows.extend(payload.get("results") or [])
             url = payload.get("next_url")
-            params = {"apiKey": self.api_key}
+            params = None
             time.sleep(self.request_interval)
         return rows
 
