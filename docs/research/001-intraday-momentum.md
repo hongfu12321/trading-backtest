@@ -54,20 +54,22 @@ This is a research hypothesis, **not** an established profitable trading rule fo
 ## Reference
 - Gao et al., *Market Intraday Momentum* (2018). Source: https://www.sciencedirect.com/science/article/pii/S0304405X18301351
 
-## Results (first run, Issue #1)
+## Results (Issue #1, revised after PR #3 review)
 
-Full figures: [`reports/experiments/001-intraday-momentum/report.md`](../../reports/experiments/001-intraday-momentum/report.md); per-day data and run settings (seed 0, 2000 bootstrap draws, git SHA) in `daily.csv` and `summary.json` next to it. Reproduce with `uv run trading-backtest research momentum`.
+Full figures: [`reports/experiments/001-intraday-momentum/report.md`](../../reports/experiments/001-intraday-momentum/report.md); per-day data and run settings (seed 0, 2000 bootstrap draws in 5-day blocks, git SHA) in `daily.csv` and `summary.json` next to it. Reproduce with `uv run trading-backtest research momentum`.
 
 **Coverage.** 2024-10-09 to 2026-10-08 only (501 sessions per symbol; 496 used, 5 early closes excluded; no missing minutes). The current Massive plan returns 403 for older minute data, so 2022–2024 is **not** covered; extending it needs a paid upgrade, which was not requested.
 
-**Definitions as run.** Timestamps are bar starts (ET). r_open = 09:59 close / 09:30 open − 1; r_close = 15:59 close / 15:29 close − 1. The previous-close variant (closer to Gao et al.; not verified against the paper) is reported alongside. Splits fixed before running: exploration 2024-10-09–2025-10-08, validation 2025-10-09–2026-04-10, holdout 2026-04-13–2026-10-08.
+**Definitions as run.** A bar's timestamp is its start (ET); the 09:59 bar's Close is the last trade before 10:00:00, so the signal exists at 10:00:00 at the earliest. r_open = 09:59 close / 09:30 open − 1; r_close = 15:59 close / 15:29 close − 1. A previous-close-to-10:00 variant is reported as a sensitivity check. Gao et al. (2018) motivate the question, but their exact definitions were not checked against the paper, so this is **not a replication**. Splits fixed before the first run: exploration 2024-10-09–2025-10-08, validation 2025-10-09–2026-04-10, holdout 2026-04-13–2026-10-08.
+
+**Decision rule (revised).** The decision uses exploration + validation days only: supported if the slope's 95% CI is above zero, unsupported if below, inconclusive if it spans zero. The holdout is consulted once, and only to confirm a supported decision. The first run's rule mixed full-sample (holdout-including) CIs with the holdout slope; review flagged this and it was changed. Note the holdout figures were already seen in that first run, so the holdout is not pristine; the new rule does not use it for these results.
 
 **Findings.**
-- No reliable relationship: full-sample correlation 0.04 (QQQ) and 0.05 (SPY), slope CIs span zero, Spearman ≈ 0, sign agreement below 50%. The previous-close definition is also ≈ 0.
-- Unstable: slope positive in the exploration period, negative in validation, ≈ 0 in the holdout; positive in 2025, negative in 2026.
-- `last_half_hour` trade (enter 15:30, exit at close, side = sign of r_open): negative in every split for both symbols, already slightly negative before costs (−0.4 / −0.3 bps mean).
-- `from_1000` trade (enter 10:00, exit at close): positive only in the exploration period (+7 bps at 2 bps cost), negative in validation and holdout. Not evidence of an edge.
+- Development decision **inconclusive** for both: slope 0.029 (QQQ) and 0.042 (SPY), 95% CIs [−0.048, 0.093] and [−0.085, 0.156]; the same with 1-, 5- and 20-day bootstrap blocks. Spearman ≈ 0, sign agreement below 50%. The previous-close variant is also ≈ 0.
+- Unstable: slope positive in exploration, negative in validation, ≈ 0 in the holdout; positive in 2025, negative in 2026.
+- `last_half_hour` (enter 15:30) and `last_half_hour_1531`: negative in every split for both symbols, slightly negative before costs.
+- `from_1000` (enter 10:00): positive only in exploration (+7 bps at 2 bps cost); negative in validation and holdout. With one minute of latency (`from_1001`) the full-sample mean drops by about 0.4–0.7 bps; the pattern is the same.
 
-**Verdict:** inconclusive under the pre-registered rule (full-sample slope CI spans zero; holdout slope slightly positive). In practice the data shows no usable intraday momentum in QQQ/SPY over this period.
+**Verdict: inconclusive** for QQQ and SPY. No tradeable edge was found; the data shows no usable intraday momentum in these ETFs over this period.
 
-**Limitations.** Two years only, one regime; no 2022 bear market. Minute-bar Close of 15:59 stands in for the closing auction, and the 09:30 bar's Open for the opening auction. Adjusted prices from a single vendor. Costs are a flat round-trip bps charge with no market-impact model. Bootstrap resamples independent days (no block structure); Newey-West uses 5 lags. Quintile bins are computed ex post on the full sample and are descriptive only.
+**Limitations.** Two years only, one regime; no 2022 bear market. Minute-bar Close of 15:59 stands in for the closing auction, and the 09:30 bar's Open for the opening auction. Adjusted prices from a single vendor. Costs are a flat round-trip bps charge with no market-impact model. Trade sums and drawdowns assume a fixed notional per trade (no compounding). Block bootstrap CIs assume dependence dies out within the block length (reported for 1/5/20 days); Newey-West uses 5 lags. Quintile bins are computed ex post on the full sample and are descriptive only.
